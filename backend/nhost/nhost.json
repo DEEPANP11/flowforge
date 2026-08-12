@@ -1,0 +1,17 @@
+{
+  "nhost": {
+    "hasura": {
+      "adminSecret": "${HASURA_ADMIN_SECRET}",
+      "graphqlUrl": "${HASURA_GRAPHQL_URL}"
+    },
+    "auth": {
+      "jwtSecret": "${NHOST_JWT_SECRET}"
+    },
+    "storage": {
+      "enabled": true
+    }
+  },
+  "permissions": {
+    "default": "authenticated"
+  }
+}

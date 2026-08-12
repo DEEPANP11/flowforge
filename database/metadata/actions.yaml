@@ -1,0 +1,83 @@
+actions:
+  - name: triggerWorkflowRun
+    definition:
+      kind: synchronous
+      handler: https://egkwhbnpexegppxvmiqf.ap-south-1.nhost.app/v1/functions/triggerWorkflowRun
+    permissions:
+      - role: user
+    type: triggerWorkflowRun!
+    arguments:
+      - name: workflow_id
+        type: uuid!
+
+  - name: approveStep
+    definition:
+      kind: synchronous
+      handler: https://egkwhbnpexegppxvmiqf.ap-south-1.nhost.app/v1/functions/approveStep
+    permissions:
+      - role: user
+    type: approveStep!
+    arguments:
+      - name: step_run_id
+        type: uuid!
+      - name: approved
+        type: Boolean!
+
+  - name: webhookTrigger
+    definition:
+      kind: synchronous
+      handler: https://egkwhbnpexegppxvmiqf.ap-south-1.nhost.app/v1/functions/webhookTrigger
+    permissions: []
+    type: webhookTrigger!
+    arguments:
+      - name: workflow_id
+        type: uuid!
+      - name: payload
+        type: json
+
+custom_types:
+  input_objects:
+    - name: triggerWorkflowRunInput
+      fields:
+        - name: workflow_id
+          type: uuid!
+
+    - name: approveStepInput
+      fields:
+        - name: step_run_id
+          type: uuid!
+        - name: approved
+          type: Boolean!
+
+    - name: webhookTriggerInput
+      fields:
+        - name: workflow_id
+          type: uuid!
+        - name: payload
+          type: json
+
+  objects:
+    - name: TriggerWorkflowRunResponse
+      fields:
+        - name: success
+          type: Boolean!
+        - name: run_id
+          type: uuid
+        - name: message
+          type: String
+
+    - name: ApproveStepResponse
+      fields:
+        - name: success
+          type: Boolean!
+        - name: message
+          type: String
+
+    - name: WebhookTriggerResponse
+      fields:
+        - name: success
+          type: Boolean!
+        - name: run_id
+          type: uuid
+        - name: message
+          type: String
