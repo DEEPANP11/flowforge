@@ -217,7 +217,7 @@ async function executeHTTP(config: any): Promise<any> {
   }
 
   // Use CORS proxy for browser requests
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+  const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
   const res = await fetch(proxyUrl, {
     method,
     headers: config?.headers || {},
