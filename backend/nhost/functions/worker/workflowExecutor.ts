@@ -239,8 +239,12 @@ export async function executeWorkflow(workflowRunId: string): Promise<void> {
     // 16. Move to next step (or branch if conditional)
     if (step.step_type === 'conditional_branch' && result.result?.output?.next_step_index !== undefined) {
       const targetIndex = result.result.output.next_step_index;
-      // Clamp to valid range
-      currentIndex = Math.max(0, Math.min(targetIndex, steps.length - 1));
+      // Only allow forward jumps (prevent infinite loops)
+      if (targetIndex > currentIndex) {
+        currentIndex = Math.min(targetIndex, steps.length - 1);
+      } else {
+        currentIndex++;
+      }
       console.log(`[WorkflowExecutor] Conditional branch: jumping to step index ${currentIndex}`);
     } else {
       currentIndex++;

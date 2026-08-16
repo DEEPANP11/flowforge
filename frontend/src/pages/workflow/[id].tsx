@@ -3,7 +3,6 @@ import { useNhostClient } from '@nhost/react';
 import { useRouter } from 'next/router';
 import StepList from '../../components/WorkflowBuilder/StepList';
 import StepConfig from '../../components/WorkflowBuilder/StepConfig';
-import TriggerConfig from '../../components/WorkflowBuilder/TriggerConfig';
 import { setNhostClient, triggerWorkflowRun } from '../../utils/workflowRunner';
 
 interface Step {
@@ -44,9 +43,6 @@ export default function WorkflowEditor() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [triggerType, setTriggerType] = useState('manual');
-  const [triggerConfig, setTriggerConfig] = useState<any>({});
-  const [triggerId, setTriggerId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string>('viewer');
 
   useEffect(() => {
@@ -155,26 +151,6 @@ export default function WorkflowEditor() {
           { wid: wf.id }
         );
         setSteps(stepsData?.workflow_steps || []);
-
-        // Load trigger (graceful — table may not be tracked)
-        try {
-          const triggerData = await gqlFetch(
-            `query($wid: uuid!) {
-              workflow_triggers(where: { workflow_id: { _eq: $wid } }, limit: 1) {
-                id trigger_type config
-              }
-            }`,
-            { wid: wf.id }
-          );
-          const t = triggerData?.workflow_triggers?.[0];
-          if (t) {
-            setTriggerType(t.trigger_type);
-            setTriggerConfig(t.config || {});
-            setTriggerId(t.id);
-          }
-        } catch {
-          // workflow_triggers table not tracked in Hasura — skip silently
-        }
       }
     } catch (e: any) {
       console.error('loadWorkflow error:', e);
@@ -222,31 +198,6 @@ export default function WorkflowEditor() {
         }
       }
 
-      // Save trigger (graceful — table may not be tracked in Hasura)
-      try {
-        const ttEnum = triggerType;
-        if (triggerId) {
-          await gqlFetch(
-            `mutation($tid: uuid!, $cfg: jsonb!) {
-              update_workflow_triggers_by_pk(pk_columns: { id: $tid }, _set: { trigger_type: ${ttEnum}, config: $cfg }) { id }
-            }`,
-            { tid: triggerId, cfg: triggerConfig }
-          );
-        } else {
-          const tResult = await gqlFetch(
-            `mutation($wid: uuid!, $cfg: jsonb!) {
-              insert_workflow_triggers_one(object: { workflow_id: $wid, trigger_type: ${ttEnum}, config: $cfg, is_active: true }) { id }
-            }`,
-            { wid: workflow.id, cfg: triggerConfig }
-          );
-          if (tResult?.insert_workflow_triggers_one?.id) {
-            setTriggerId(tResult.insert_workflow_triggers_one.id);
-          }
-        }
-      } catch (triggerErr: any) {
-        console.warn('Trigger save skipped (table may not be tracked):', triggerErr.message);
-      }
-
       await loadWorkflow();
     } catch (e: any) {
       console.error('Save error:', e);
@@ -278,10 +229,10 @@ export default function WorkflowEditor() {
   function addStep(type: string) {
     const configs: Record<string, any> = {
       llm_call: { provider: 'groq', model: '', prompt: '' },
-      http_request: { method: 'GET', url: '', body: {} },
+      http_request: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', headers: {}, body: {} },
       db_write: { operation: 'insert', table: 'execution_logs', columns: { event_type: 'workflow_event', event_data: {} } },
       notify: { channel: 'slack', message_template: '' },
-      conditional_branch: { condition: ' contains ', true_next_step_index: 0, false_next_step_index: 0 },
+      conditional_branch: { condition: { left: '', operator: 'contains', right: '' } },
       approval_gate: { required_role: 'editor', message: '' },
     };
     setSteps([...steps, { step_type: type, name: `Step ${steps.length + 1}`, config: configs[type] || {}, order_index: steps.length }]);
@@ -461,12 +412,6 @@ export default function WorkflowEditor() {
                   <p>No steps yet. Click "+ Add Step" to start building.</p>
                 </div>
               )}
-            </div>
-
-            {/* Trigger Config */}
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: '#374151', margin: '0 0 16px' }}>⚡ Trigger Configuration</h3>
-              <TriggerConfig type={triggerType} config={triggerConfig} onChange={(t, c) => { setTriggerType(t); setTriggerConfig(c); }} />
             </div>
           </div>
 

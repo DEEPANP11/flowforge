@@ -44,12 +44,11 @@ export default function StepConfig({ step, onChange }: StepConfigProps) {
           <select value={config.provider || 'groq'} onChange={(e) => updateConfig('provider', e.target.value)} style={inputStyle}>
             <option value="groq">Groq</option>
             <option value="openrouter">OpenRouter</option>
-            <option value="gemini">Gemini</option>
           </select>
         </div>
         <div>
           <label style={labelStyle}>Model</label>
-          <input type="text" value={config.model || ''} onChange={(e) => updateConfig('model', e.target.value)} style={inputStyle} placeholder="e.g., llama-3.1-8b-instant" />
+          <input type="text" value={config.model || ''} onChange={(e) => updateConfig('model', e.target.value)} style={inputStyle} placeholder={config.provider === 'openrouter' ? 'meta-llama/llama-3.1-8b-instruct' : 'llama-3.1-8b-instant'} />
         </div>
         <div>
           <label style={labelStyle}>Prompt</label>
@@ -73,7 +72,7 @@ export default function StepConfig({ step, onChange }: StepConfigProps) {
         </div>
         <div>
           <label style={labelStyle}>URL</label>
-          <input type="url" value={config.url || ''} onChange={(e) => updateConfig('url', e.target.value)} style={inputStyle} placeholder="https://api.example.com/endpoint" />
+          <input type="url" value={config.url || ''} onChange={(e) => updateConfig('url', e.target.value)} style={inputStyle} placeholder="https://jsonplaceholder.typicode.com/posts/1" />
         </div>
         <div>
           <label style={labelStyle}>Body (JSON)</label>
@@ -217,19 +216,9 @@ export default function StepConfig({ step, onChange }: StepConfigProps) {
               updateConfig('condition', parsed);
             }}
             style={{ ...inputStyle, fontFamily: 'monospace' }}
-            placeholder={'e.g. {{step_0.output.text}} contains healthcare'}
+            placeholder="e.g. {{step_0.output.text}} contains healthcare"
           />
-          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{'Use {{step_N.output.field}} to reference previous steps'}</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>If True - Step #</label>
-            <input type="number" min={0} value={config.true_next_step_index ?? ''} onChange={(e) => updateConfig('true_next_step_index', parseInt(e.target.value) || 0)} style={inputStyle} placeholder="e.g., 3" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>If False - Step #</label>
-            <input type="number" min={0} value={config.false_next_step_index ?? ''} onChange={(e) => updateConfig('false_next_step_index', parseInt(e.target.value) || 0)} style={inputStyle} placeholder="e.g., 4" />
-          </div>
+          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{'Evaluates condition. Steps always run in order.'}</p>
         </div>
       </div>
     );

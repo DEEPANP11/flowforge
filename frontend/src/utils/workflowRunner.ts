@@ -146,14 +146,8 @@ async function executeSteps(runId: string, steps: any[], orgId: string): Promise
       return { success: true, runId };
     }
 
-    // Branch if conditional, otherwise advance
-    if (step.step_type === 'conditional_branch' && output?.next_step_index !== undefined) {
-      // Clamp to valid range
-      currentIndex = Math.max(0, Math.min(output.next_step_index, steps.length - 1));
-      console.log(`Conditional branch: jumping to step index ${currentIndex}`);
-    } else {
-      currentIndex++;
-    }
+    // Move to next step
+    currentIndex++;
   }
 
   // All steps completed
@@ -185,46 +179,89 @@ async function executeLLM(config: any): Promise<any> {
   const model = config?.model || 'llama-3.1-8b-instant';
   const prompt = config?.prompt || 'Hello';
 
-  // Stub for now - return mock response
-  // To add real LLM calls, set GROQ_API_KEY or OPENROUTER_API_KEY in .env.local
-  if (provider === 'groq' && process.env.NEXT_PUBLIC_GROQ_API_KEY) {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: prompt }],
-        temperature: config?.temperature || 0.7,
-        max_tokens: config?.max_tokens || 1000,
-      }),
-    });
-    const data = await res.json();
-    return { text: data.choices?.[0]?.message?.content || '', model, provider };
+  // Use API proxy to avoid CORS and hide API keys server-side
+  const apiKey = provider === 'openrouter'
+    ? process.env.NEXT_PUBLIC_OPENROUTER_API_KEY
+    : process.env.NEXT_PUBLIC_GROQ_API_KEY;
+
+  if (!apiKey) {
+    return { text: `[Stub LLM] No API key for ${provider}. Set NEXT_PUBLIC_${provider.toUpperCase()}_API_KEY in .env.local`, model, provider, stubbed: true };
   }
 
-  return { text: `[Stub LLM Response] Provider: ${provider}, Model: ${model}, Prompt: ${prompt.substring(0, 50)}...`, model, provider, stubbed: true };
+  const url = provider === 'openrouter'
+    ? 'https://openrouter.ai/api/v1/chat/completions'
+    : 'https://api.groq.com/openai/v1/chat/completions';
+
+  // Retry with backoff for rate limits
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            ...(provider === 'openrouter' ? { 'HTTP-Referer': 'https://flowforge.vercel.app', 'X-Title': 'FlowForge' } : {}),
+          },
+          body: {
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: config?.temperature || 0.7,
+            max_tokens: config?.max_tokens || 1000,
+          },
+        }),
+      });
+      const json = await res.json();
+      // Rate limited — wait and retry
+      if (res.status === 429 || json.body?.error?.type === 'rate_limit_exceeded') {
+        const wait = (attempt + 1) * 5000;
+        console.log(`[LLM] Rate limited, waiting ${wait}ms before retry...`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      if (json.body?.error) {
+        return { text: `[LLM Error] ${json.body.error.message || JSON.stringify(json.body.error)}`, model, provider, error: true };
+      }
+      return { text: json.body?.choices?.[0]?.message?.content || '', model, provider };
+    } catch (err: any) {
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      return { text: `[LLM Error] ${err.message}`, model, provider, error: true };
+    }
+  }
+  return { text: '[LLM Error] Rate limited after 3 retries. Try again in a minute.', model, provider, error: true };
 }
 
 async function executeHTTP(config: any): Promise<any> {
   const method = config?.method || 'GET';
-  const url = config?.url || 'https://httpbin.org/get';
+  const url = config?.url || '';
 
-  if (!url || url === 'https://api.example.com/endpoint') {
+  if (!url) {
     return { status: 200, body: { stubbed: true, message: 'HTTP stub - configure URL' } };
   }
 
-  // Use CORS proxy for browser requests
-  const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-  const res = await fetch(proxyUrl, {
-    method,
-    headers: config?.headers || {},
-    body: method !== 'GET' ? JSON.stringify(config?.body || {}) : undefined,
-  });
-  const body = await res.json().catch(() => res.text());
-  return { status: res.status, body };
+  // Use API proxy to avoid CORS entirely
+  try {
+    const res = await fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        method,
+        headers: config?.headers || {},
+        body: config?.body || undefined,
+      }),
+    });
+    const json = await res.json();
+    return { status: json.status || res.status, body: json.body };
+  } catch (err: any) {
+    return { status: 0, body: { error: err.message || 'Request failed' } };
+  }
 }
 
 async function executeDBWrite(config: any, runId?: string): Promise<any> {
@@ -399,59 +436,9 @@ async function executeNotify(config: any, runId?: string, previousOutputs?: any[
 
 async function executeConditional(config: any, previousOutputs?: any[]): Promise<any> {
   const cond = config?.condition || { left: '', operator: '==', right: '' };
-
-  // Resolve template variables like {{step_0.output.text}} or {{previous.output}}
-  function resolveTemplate(val: string): string {
-    if (!val || typeof val !== 'string') return String(val || '');
-    return val.replace(/\{\{([^}]+)\}\}/g, (_match, expr) => {
-      const trimmed = expr.trim();
-      // {{step_N.output.field}} or {{stepN.output.field}}
-      const stepMatch = trimmed.match(/^step_?(\d+)\.output\.?(.*)/);
-      if (stepMatch && previousOutputs) {
-        const idx = parseInt(stepMatch[1]);
-        const field = stepMatch[2];
-        const output = previousOutputs[idx];
-        if (output !== undefined) {
-          if (field) {
-            const parts = field.split('.');
-            let current = output;
-            for (const p of parts) {
-              if (current === null || current === undefined) return '';
-              current = current[p];
-            }
-            return String(current ?? '');
-          }
-          return typeof output === 'string' ? output : JSON.stringify(output);
-        }
-        return '';
-      }
-      // {{previous.output}}
-      if (trimmed.startsWith('previous.output')) {
-        const field = trimmed.replace('previous.output.', '');
-        const prev = previousOutputs && previousOutputs.length > 1 ? previousOutputs[previousOutputs.length - 2] : undefined;
-        if (prev !== undefined) {
-          if (field) {
-            const parts = field.split('.');
-            let current = prev;
-            for (const p of parts) {
-              if (current === null || current === undefined) return '';
-              current = current[p];
-            }
-            return String(current ?? '');
-          }
-          return typeof prev === 'string' ? prev : JSON.stringify(prev);
-        }
-        return '';
-      }
-      return '';
-    });
-  }
-
-  const leftRaw = String(cond.left || '');
-  const rightRaw = String(cond.right || '');
-  const leftVal = resolveTemplate(leftRaw);
-  const rightVal = resolveTemplate(rightRaw);
-  const op = cond.operator || '==';
+  const leftVal = typeof cond === 'string' ? cond : String(cond.left || '');
+  const rightVal = typeof cond === 'string' ? '' : String(cond.right || '');
+  const op = typeof cond === 'string' ? 'contains' : (cond.operator || '==');
   let met = false;
   switch (op) {
     case '==': met = leftVal === rightVal; break;
@@ -466,5 +453,5 @@ async function executeConditional(config: any, previousOutputs?: any[]): Promise
     case 'ends_with': met = leftVal.endsWith(rightVal); break;
     default: met = false;
   }
-  return { condition_met: met, left_value: leftVal, operator: op, right_value: rightVal, branch: met ? 'true' : 'false', next_step_index: met ? (config.true_next_step_index ?? 0) : (config.false_next_step_index ?? 0) };
+  return { condition_met: met, left_value: leftVal, operator: op, right_value: rightVal, branch: met ? 'true' : 'false' };
 }
