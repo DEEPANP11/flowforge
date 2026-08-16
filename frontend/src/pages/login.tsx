@@ -30,7 +30,47 @@ export default function Login() {
         ? await nhost.auth.signUp({ email, password })
         : await nhost.auth.signIn({ email, password });
       if (authError) setError(authError.message);
-      else router.push('/');
+      else {
+        // For new signups, check if user has an org; if not, create one
+        if (isSignUp) {
+          await new Promise(r => setTimeout(r, 1000)); // Wait for session to settle
+          try {
+            const user = nhost.auth.getUser();
+            if (user) {
+              const { data } = await nhost.graphql.request(
+                `query($uid: uuid!) { org_members(where: { user_id: { _eq: $uid } }, limit: 1) { org_id } }`,
+                { uid: user.id }
+              );
+              const orgId = data?.org_members?.[0]?.org_id;
+              if (!orgId) {
+                // Create default org
+                const orgName = email.split('@')[0] + "'s Organization";
+                await nhost.graphql.request(
+                  `mutation($uid: uuid!, $name: String!) {
+                    insert_organizations_one(object: { name: $name }) {
+                      id
+                    }
+                  }`,
+                  { uid: user.id, name: orgName }
+                ).then((r: any) => {
+                  const newOrgId = r?.data?.insert_organizations_one?.id;
+                  if (newOrgId) {
+                    nhost.graphql.request(
+                      `mutation($oid: uuid!, $uid: uuid!) {
+                        insert_org_members_one(object: { org_id: $oid, user_id: $uid, role: owner }) { id }
+                      }`,
+                      { oid: newOrgId, uid: user.id }
+                    ).then(() => {});
+                  }
+                });
+              }
+            }
+          } catch (orgErr) {
+            console.warn('Auto-org creation failed:', orgErr);
+          }
+        }
+        router.push('/');
+      }
     } catch (e) {
       setError('An error occurred');
     } finally {

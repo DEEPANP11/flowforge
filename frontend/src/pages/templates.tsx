@@ -21,7 +21,7 @@ const TEMPLATES = [
     icon: '🔄',
     tags: ['HTTP', 'Database'],
     steps: [
-      { step_type: 'http_request', name: 'Fetch API Data', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', body: {} } },
+      { step_type: 'http_request', name: 'Fetch API Data', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', headers: {}, body: {} } },
       { step_type: 'db_write', name: 'Store Result', order_index: 1, config: { operation: 'insert', table: 'execution_logs', columns: { event_type: 'api_fetch', event_data: {} } } },
     ],
   },
@@ -32,8 +32,8 @@ const TEMPLATES = [
     icon: '🔀',
     tags: ['Conditional', 'LLM'],
     steps: [
-      { step_type: 'http_request', name: 'Check Status', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', body: {} } },
-      { step_type: 'conditional_branch', name: 'Check if Valid', order_index: 1, config: { condition: 'true' } },
+      { step_type: 'http_request', name: 'Check Status', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', headers: {}, body: {} } },
+      { step_type: 'conditional_branch', name: 'Check if Valid', order_index: 1, config: { condition: { left: '{{step_0.output.status}}', operator: '==', right: '200' }, true_next_step_index: 2, false_next_step_index: 2 } },
       { step_type: 'llm_call', name: 'Analyze Result', order_index: 2, config: { provider: 'groq', model: 'llama-3.1-8b-instant', prompt: 'Analyze this data and provide a brief summary:\n\n{{step_0.output}}' } },
     ],
   },
@@ -44,7 +44,7 @@ const TEMPLATES = [
     icon: '🚀',
     tags: ['Full Stack', 'AI'],
     steps: [
-      { step_type: 'http_request', name: 'Fetch Data', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', body: {} } },
+      { step_type: 'http_request', name: 'Fetch Data', order_index: 0, config: { method: 'GET', url: 'https://jsonplaceholder.typicode.com/posts/1', headers: {}, body: {} } },
       { step_type: 'llm_call', name: 'AI Analysis', order_index: 1, config: { provider: 'groq', model: 'llama-3.1-8b-instant', prompt: 'Analyze this API response and provide key insights:\n\n{{step_0.output}}' } },
       { step_type: 'db_write', name: 'Store Analysis', order_index: 2, config: { operation: 'insert', table: 'execution_logs', columns: { event_type: 'ai_analysis', event_data: {} } } },
       { step_type: 'notify', name: 'Notify Team', order_index: 3, config: { channel: 'slack', message_template: 'Analysis complete: {{step_1.output.choices[0].message.content}}', subject: 'AI Analysis Complete', url: '', recipient: '' } },
